@@ -27,6 +27,8 @@ import wave
 import pveagle
 from pvrecorder import PvRecorder
 
+from pvcheetah import create
+
 PV_RECORDER_FRAME_LENGTH = 512
 
 FEEDBACK_TO_DESCRIPTIVE_MSG = {
@@ -56,15 +58,16 @@ class EnrollmentAnimation(threading.Thread):
 
     def run(self):
         self._done = False
+        st.text("temoooo")
         while not self._done:
             for frame in self._frames:
                 if self._done:
                     break
-                print('\033[2K\033[1G\r[%3d%%]' % self._percentage + self._feedback + frame, end='', flush=True)
+                st.text('\033[2K\033[1G\r[%3d%%]' % self._percentage + self._feedback + frame)
                 time.sleep(self._sleep_time_sec)
 
     def stop(self):
-        print('\033[2K\033[1G\r[%3d%%]' % self._percentage + self._feedback, end='', flush=True)
+        st.text('\033[2K\033[1G\r[%3d%%]' % self._percentage + self._feedback)
         self._done = True
 
     @property
@@ -87,120 +90,113 @@ class EnrollmentAnimation(threading.Thread):
 def print_result(scores, labels):
     result = '\rscores -> '
     result += ', '.join('`%s`: %.2f' % (label, score) for label, score in zip(labels, scores))
-    print(result, end='', flush=True)
+    st.text(result)
 
 
-def main(access_key):
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--show_audio_devices',
-        action='store_true',
-        help='List available audio input devices and exit')
+def main(props):
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument(
+    #     '--show_audio_devices',
+    #     action='store_true',
+    #     help='List available audio input devices and exit')
 
-    common_parser = argparse.ArgumentParser(add_help=False)
-    common_parser.add_argument(
-        '--access_key',
-        required=True,
-        help='AccessKey obtained from Picovoice Console (https://console.picovoice.ai/)')
-    common_parser.add_argument(
-        '--library_path',
-        help='Absolute path to dynamic library. Default: using the library provided by `pveagle`')
-    common_parser.add_argument(
-        '--model_path',
-        help='Absolute path to Eagle model. Default: using the model provided by `pveagle`')
-    common_parser.add_argument('--audio_device_index', type=int, default=-1, help='Index of input audio device')
-    common_parser.add_argument(
-        '--output_audio_path',
-        help='If provided, all recorded audio data will be saved to the given .wav file')
+    # common_parser = argparse.ArgumentParser(add_help=False)
+    # common_parser.add_argument(
+    #     '--access_key',
+    #     required=True,
+    #     help='AccessKey obtained from Picovoice Console (https://console.picovoice.ai/)')
+    # common_parser.add_argument(
+    #     '--library_path',
+    #     help='Absolute path to dynamic library. Default: using the library provided by `pveagle`')
+    # common_parser.add_argument(
+    #     '--model_path',
+    #     help='Absolute path to Eagle model. Default: using the model provided by `pveagle`')
+    # common_parser.add_argument('--audio_device_index', type=int, default=-1, help='Index of input audio device')
+    # common_parser.add_argument(
+    #     '--output_audio_path',
+    #     help='If provided, all recorded audio data will be saved to the given .wav file')
 
-    subparsers = parser.add_subparsers(dest='command')
+    # subparsers = parser.add_subparsers(dest='command')
 
-    enroll = subparsers.add_parser('enroll', help='Enroll a new speaker profile', parents=[common_parser])
-    enroll.add_argument(
-        '--output_profile_path',
-        required=True,
-        help='Absolute path to output file for the created profile')
+    # enroll = subparsers.add_parser('enroll', help='Enroll a new speaker profile', parents=[common_parser])
+    # enroll.add_argument(
+    #     '--output_profile_path',
+    #     required=True,
+    #     help='Absolute path to output file for the created profile')
 
-    test = subparsers.add_parser(
-        'test',
-        help='Evaluate Eagle''s performance using the provided speaker profiles.',
-        parents=[common_parser])
-    test.add_argument(
-        '--input_profile_paths',
-        required=True,
-        nargs='+',
-        help='Absolute path(s) to speaker profile(s)')
+    # test = subparsers.add_parser(
+    #     'test',
+    #     help='Evaluate Eagle''s performance using the provided speaker profiles.',
+    #     parents=[common_parser])
+    # test.add_argument(
+    #     '--input_profile_paths',
+    #     required=True,
+    #     nargs='+',
+    #     help='Absolute path(s) to speaker profile(s)')
 
-    args = parser.parse_args()
+    # args = parser.parse_args()
 
-    if args.show_audio_devices:
+    if props['show_audio_devices']:
         for index, name in enumerate(PvRecorder.get_available_devices()):
-            print('Device #%d: %s' % (index, name))
+            st.text('Device #%d: %s' % (index, name))
         return
 
-    if args.command == 'enroll':
+    if props['command'] == 'enroll':
         try:
-            eagle_profiler = pveagle.create_profiler(
-                access_key=args.access_key,
-                model_path=args.model_path,
-                library_path=args.library_path)
+            eagle_profiler = pveagle.create_profiler(access_key=props['access_key'])
         except pveagle.EagleError as e:
-            print("Failed to initialize Eagle: %s" % e)
+            st.text("Failed to initialize Eagle: %s" % e)
             raise
 
-        print('Eagle version: %s' % eagle_profiler.version)
-        recorder = PvRecorder(frame_length=PV_RECORDER_FRAME_LENGTH, device_index=args.audio_device_index)
-        print("Recording audio from '%s'" % recorder.selected_device)
+        st.text('Eagle version: %s' % eagle_profiler.version)
+        recorder = PvRecorder(frame_length=PV_RECORDER_FRAME_LENGTH, device_index=props['audio_device_index'])
+        st.text("Recording audio from '%s'" % recorder.selected_device)
         num_enroll_frames = eagle_profiler.min_enroll_samples // PV_RECORDER_FRAME_LENGTH
         sample_rate = eagle_profiler.sample_rate
         enrollment_animation = EnrollmentAnimation()
-        print('Please keep speaking until the enrollment percentage reaches 100%')
+        st.text('Please keep speaking until the enrollment percentage reaches 100%')
         try:
             with contextlib.ExitStack() as file_stack:
-                if args.output_audio_path is not None:
-                    enroll_audio_file = file_stack.enter_context(wave.open(args.output_audio_path, 'wb'))
-                    enroll_audio_file.setnchannels(1)
-                    enroll_audio_file.setsampwidth(2)
-                    enroll_audio_file.setframerate(sample_rate)
-
                 enroll_percentage = 0.0
                 enrollment_animation.start()
+                
+                enroll_message = st.empty()
+                
                 while enroll_percentage < 100.0:
                     enroll_pcm = list()
                     recorder.start()
                     for _ in range(num_enroll_frames):
                         input_frame = recorder.read()
-                        if args.output_audio_path is not None:
-                            enroll_audio_file.writeframes(struct.pack('%dh' % len(input_frame), *input_frame))
                         enroll_pcm.extend(input_frame)
                     recorder.stop()
 
                     enroll_percentage, feedback = eagle_profiler.enroll(enroll_pcm)
                     enrollment_animation.percentage = enroll_percentage
+                    enroll_message.text(str(enrollment_animation.percentage) + '% - ' + str(FEEDBACK_TO_DESCRIPTIVE_MSG[feedback]))
                     enrollment_animation.feedback = ' - %s' % FEEDBACK_TO_DESCRIPTIVE_MSG[feedback]
 
             speaker_profile = eagle_profiler.export()
             enrollment_animation.stop()
-            with open(args.output_profile_path, 'wb') as f:
+            with open(props['output_profile_path'], 'wb') as f:
                 f.write(speaker_profile.to_bytes())
-            print('\nSpeaker profile is saved to %s' % args.output_profile_path)
+            st.text('\nSpeaker profile is saved to %s' % props['output_profile_path'])
 
         except KeyboardInterrupt:
-            print('\nStopping enrollment. No speaker profile is saved.')
+            st.text('\nStopping enrollment. No speaker profile is saved.')
             enrollment_animation.stop()
         except pveagle.EagleActivationLimitError:
-            print('AccessKey has reached its processing limit')
+            st.text('AccessKey has reached its processing limit')
         except pveagle.EagleError as e:
-            print('Failed to enroll speaker: %s' % e)
+            st.text('Failed to enroll speaker: %s' % e)
         finally:
             recorder.stop()
             recorder.delete()
             eagle_profiler.delete()
 
-    elif args.command == 'test':
+    elif props['command'] == 'test':
         profiles = list()
         speaker_labels = list()
-        for profile_path in args.input_profile_paths:
+        for profile_path in props['input_profile_paths']:
             speaker_labels.append(os.path.splitext(os.path.basename(profile_path))[0])
             with open(profile_path, 'rb') as f:
                 profile = pveagle.EagleProfile.from_bytes(f.read())
@@ -208,35 +204,49 @@ def main(access_key):
 
         eagle = None
         recorder = None
+        
+        cheetah = create(
+            access_key=props['access_key'],
+            endpoint_duration_sec=props['endpoint_duration_sec'],
+            enable_automatic_punctuation=not props['disable_automatic_punctuation']
+        )
+        
         try:
             eagle = pveagle.create_recognizer(
-                access_key=args.access_key,
-                model_path=args.model_path,
-                library_path=args.library_path,
-                speaker_profiles=profiles)
+                access_key=props['access_key'],
+                speaker_profiles=profiles
+            )
 
-            recorder = PvRecorder(device_index=args.audio_device_index, frame_length=eagle.frame_length)
+            recorder = PvRecorder(device_index=props['audio_device_index'], frame_length=eagle.frame_length)
             recorder.start()
 
             with contextlib.ExitStack() as file_stack:
-                if args.output_audio_path is not None:
-                    test_audio_file = file_stack.enter_context(wave.open(args.output_audio_path, 'wb'))
-                    test_audio_file.setnchannels(1)
-                    test_audio_file.setsampwidth(2)
-                    test_audio_file.setframerate(eagle.sample_rate)
-
-                print('Listening for audio... (press Ctrl+C to stop)')
+                st.text('Listening for audio... (press Ctrl+C to stop)')
+                
+                test_message = st.empty()
+                spoken_text = st.empty()
+                
                 while True:
                     pcm = recorder.read()
-                    if args.output_audio_path is not None:
-                        test_audio_file.writeframes(struct.pack('%dh' % len(pcm), *pcm))
+                    
+                    partial_transcript, is_endpoint = cheetah.process(pcm)
+                    
+                    if is_endpoint:
+                        test_message.text(cheetah.flush())
+                    
                     scores = eagle.process(pcm)
-                    print_result(scores, speaker_labels)
+                    
+                    result = '\rscores -> '
+                    result += ', '.join('`%s`: %.2f' % (label, score) for label, score in zip(speaker_labels, scores))
+                    
+                    spoken_text.text('text: ' + str(partial_transcript))
+                    
+                    test_message.text(result)
 
         except KeyboardInterrupt:
-            print('\nStopping...')
+            st.text('\nStopping...')
         except pveagle.EagleActivationLimitError:
-            print('\nAccessKey has reached its processing limit')
+            st.text('\nAccessKey has reached its processing limit')
         finally:
             if eagle is not None:
                 eagle.delete()
@@ -245,10 +255,8 @@ def main(access_key):
                 recorder.delete()
 
     else:
-        print('Please specify a mode: enroll or test')
+        st.text('Please specify a mode: enroll or test')
         return
-
-
 
 
 # Define the directory where you want to save the profiles
@@ -257,30 +265,63 @@ os.makedirs(profiles_dir, exist_ok=True)
 
 st.title("Speaker Enrollment")
 
+page = st.sidebar.radio("Select a page", ["Enroll", "Test"])
 # Input for username
-username = st.text_input("Enter a username:")
 
-# Button to start the enrollment process
-if st.button("Enroll Speaker"):
-    if username:  # Ensure the username is not empty
-        output_file_path = os.path.join(profiles_dir, f"{username}.txt")
+if page == "Enroll":
+    username = st.text_input("Enter a username:")
+
+    # Button to start the enrollment process
+    if st.button("Enroll Speaker"):
+        if username:  # Ensure the username is not empty
+            output_file_path = os.path.join(profiles_dir, f"{username}.txt")            
+            
+            try:
+                # Use subprocess to execute the command
+                # process = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                props = {
+                    'command': 'enroll',
+                    'access_key': 'CgL1JCFdKQi7VoeeNtclpgaIb6LSZd0esC7xs3dl8bl59PRC+T7NyQ==',
+                    'audio_device_index': -1,
+                    'output_profile_path': output_file_path,
+                    'input_profile_paths': output_file_path,
+                    'show_audio_devices': False,
+                    'output_audio_path': None
+                }
+                process = main(props)
+                
+                # Display the output to the user
+                st.success("Enrollment Successful!")
+                # st.text(process.stdout)
+            except subprocess.CalledProcessError as e:
+                st.error("Enrollment Failed")
+                st.text(e.stderr)
+        else:
+            st.warning("Please enter a username.")
+
+elif page == 'Test':
+    if st.button("Test Speaker"):        
+        users = ['profiles/' + f for f in os.listdir(os.path.join(profiles_dir)) if f.endswith('.txt')]       
         
-        # Construct the command to run the enroll process
-        # Here, you'll need to adjust the command according to your actual script and parameters
-        command = f"python eagle_demo_mic.py enroll --access_key CgL1JCFdKQi7VoeeNtclpgaIb6LSZd0esC7xs3dl8bl59PRC+T7NyQ== --output_profile_path {output_file_path}"
-        
-        # Running the command
         try:
             # Use subprocess to execute the command
-            process = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            # process = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            props = {
+                'command': 'test',
+                'access_key': 'CgL1JCFdKQi7VoeeNtclpgaIb6LSZd0esC7xs3dl8bl59PRC+T7NyQ==',
+                'audio_device_index': -1,
+                'input_profile_paths': users,
+                'show_audio_devices': False,
+                'output_audio_path': None,
+                'endpoint_duration_sec': 1.,
+                'disable_automatic_punctuation': True
+            }
+            
+            process = main(props)
             
             # Display the output to the user
             st.success("Enrollment Successful!")
-            st.text(process.stdout)
+            # st.text(process.stdout)
         except subprocess.CalledProcessError as e:
             st.error("Enrollment Failed")
             st.text(e.stderr)
-    else:
-        st.warning("Please enter a username.")
-
-
