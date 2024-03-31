@@ -2,7 +2,7 @@ import streamlit as st
 import subprocess
 import os
 
-
+from datetime import datetime
 
 
 #
@@ -194,8 +194,16 @@ def main(props):
             eagle_profiler.delete()
 
     elif props['command'] == 'test':
+        try:
+            eagle_profiler = pveagle.create_profiler(access_key=props['access_key'])
+        except pveagle.EagleError as e:
+            print("Failed to initialize Eagle: %s" % e)
+            raise
+        
+        
         profiles = list()
         speaker_labels = list()
+        
         for profile_path in props['input_profile_paths']:
             speaker_labels.append(os.path.splitext(os.path.basename(profile_path))[0])
             with open(profile_path, 'rb') as f:
@@ -205,43 +213,71 @@ def main(props):
         eagle = None
         recorder = None
         
-        cheetah = create(
-            access_key=props['access_key'],
-            endpoint_duration_sec=props['endpoint_duration_sec'],
-            enable_automatic_punctuation=not props['disable_automatic_punctuation']
-        )
         
         try:
             eagle = pveagle.create_recognizer(
                 access_key=props['access_key'],
                 speaker_profiles=profiles
             )
+            cheetah = create(
+                access_key=props['access_key'],
+                endpoint_duration_sec=props['endpoint_duration_sec'],
+                enable_automatic_punctuation=not props['disable_automatic_punctuation']
+            )
 
             recorder = PvRecorder(device_index=props['audio_device_index'], frame_length=eagle.frame_length)
             recorder.start()
+            
+            num_enroll_frames = eagle_profiler.min_enroll_samples // PV_RECORDER_FRAME_LENGTH
+            sample_rate = eagle_profiler.sample_rate
+            enrollment_animation = EnrollmentAnimation()
 
             with contextlib.ExitStack() as file_stack:
-                st.text('Listening for audio... (press Ctrl+C to stop)')
+                st.text('Listening for audio...')
+                
+                now = datetime.now()
+                timestamp = now.strftime("%Y%m%d_%H%M%S.wav")
+                
+                file_name = os.path.join('audio', timestamp)
+                
+                if props['output_audio'] is not None:
+                    test_audio_file = file_stack.enter_context(wave.open(file_name, 'wb'))
+                    test_audio_file.setnchannels(1)
+                    test_audio_file.setsampwidth(2)
+                    test_audio_file.setframerate(eagle.sample_rate)
                 
                 test_message = st.empty()
-                spoken_text = st.empty()
+                
+                spoken_text_field = st.empty()
+                
+                stop_bttn = st.button("Stop")
+                
+                spoken_text = []
                 
                 while True:
                     pcm = recorder.read()
                     
                     partial_transcript, is_endpoint = cheetah.process(pcm)
                     
-                    if is_endpoint:
-                        test_message.text(cheetah.flush())
+                    if partial_transcript is not '':
+                        spoken_text.append(partial_transcript)
+                    
+                    spoken_text_field.text(spoken_text)
+                    
+                    # if is_endpoint:
+                    #     test_message.text(cheetah.flush())
+                    
+                    if stop_bttn:
+                        break
                     
                     scores = eagle.process(pcm)
                     
                     result = '\rscores -> '
                     result += ', '.join('`%s`: %.2f' % (label, score) for label, score in zip(speaker_labels, scores))
                     
-                    spoken_text.text('text: ' + str(partial_transcript))
-                    
                     test_message.text(result)
+                    
+                    test_audio_file.writeframes(struct.pack('%dh' % len(pcm), *pcm))
 
         except KeyboardInterrupt:
             st.text('\nStopping...')
@@ -265,7 +301,7 @@ os.makedirs(profiles_dir, exist_ok=True)
 
 st.title("Speaker Enrollment")
 
-page = st.sidebar.radio("Select a page", ["Enroll", "Test"])
+page = st.sidebar.radio("Select a page", ["Enroll", "Test", "Chat"])
 # Input for username
 
 if page == "Enroll":
@@ -286,7 +322,8 @@ if page == "Enroll":
                     'output_profile_path': output_file_path,
                     'input_profile_paths': output_file_path,
                     'show_audio_devices': False,
-                    'output_audio_path': None
+                    'output_audio_path': None,
+                    'output_audio': True
                 }
                 process = main(props)
                 
@@ -314,7 +351,8 @@ elif page == 'Test':
                 'show_audio_devices': False,
                 'output_audio_path': None,
                 'endpoint_duration_sec': 1.,
-                'disable_automatic_punctuation': True
+                'disable_automatic_punctuation': True,
+                'output_audio': True
             }
             
             process = main(props)
@@ -325,3 +363,29 @@ elif page == 'Test':
         except subprocess.CalledProcessError as e:
             st.error("Enrollment Failed")
             st.text(e.stderr)
+
+elif page == 'Chat':
+    st.title("Echo Bot")
+
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    # Display chat messages from history on app rerun
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # React to user input
+    if prompt := st.chat_input("What is up?"):
+        # Display user message in chat message container
+        st.chat_message("user").markdown(prompt)
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        response = f"Echo: {prompt}"
+        # Display assistant response in chat message container
+        with st.chat_message("assistant"):
+            st.markdown(response)
+        # Add assistant response to chat history    
+        st.session_state.messages.append({"role": "assistant", "content": response})
